@@ -544,7 +544,8 @@
                 document.getElementById('shareBtn').addEventListener('click', async () => {
                     const dataUrl = document.getElementById('memorialImage').src;
                     const info = CRAYFISH_TYPES[this.crayfish.type];
-                    const text = `ザリガニ・ライフで第${this.generation}世代のザリガニが天寿を全うしました🦐\nサイズ: ${this.crayfish.size.toFixed(1)}cm\n種類: ${info.name}\nスコア: ${this.calcScore()}pt\n\n#ザリガニライフ`;
+                    const url = "https://zari.jp/games/zarigani.html";
+                    const text = `ザリガニ・ライフで第${this.generation}世代のザリガニが天寿を全うしました🦐\nサイズ: ${this.crayfish.size.toFixed(1)}cm\n種類: ${info.name}\nスコア: ${this.calcScore()}pt\n\n遊んでみる: ${url} #ザリガニライフ`;
                     
                     try {
                         const res = await fetch(dataUrl);
@@ -562,8 +563,8 @@
                         console.log('Share API not supported or failed', e);
                     }
                     
-                    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-                    window.open(url, '_blank');
+                    const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+                    window.open(twitterUrl, '_blank');
                 });
             }
 
