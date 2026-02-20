@@ -1,0 +1,1554 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ザリガニ・ライフ - Crayfish Life</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Zen Maru Gothic', sans-serif;
+            touch-action: manipulation;
+            user-select: none;
+        }
+
+        .tank-bg {
+            background: linear-gradient(180deg, #e0f7fa 0%, #81d4fa 50%, #4fc3f7 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 警告アニメーション群 */
+        .alert-mode { animation: flashRed 0.5s infinite alternate; }
+        @keyframes flashRed {
+            from { box-shadow: inset 0 0 0 0 red; }
+            to { box-shadow: inset 0 0 50px 20px rgba(255, 0, 0, 0.5); }
+        }
+
+        .shadow-mode { animation: flashDark 1s infinite alternate; }
+        @keyframes flashDark {
+            from { box-shadow: inset 0 0 0 0 black; }
+            to { box-shadow: inset 0 0 100px 30px rgba(0, 0, 0, 0.4); }
+        }
+
+        .sand {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 60px;
+            background: #e6cca0;
+            background-image: radial-gradient(#d3b683 15%, transparent 16%), radial-gradient(#d3b683 15%, transparent 16%);
+            background-size: 10px 10px;
+            background-position: 0 0, 5px 5px;
+            z-index: 0;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col items-center justify-center text-slate-700">
+
+    <div class="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col h-full max-h-[90vh]">
+        
+        <!-- ヘッダー -->
+        <div class="p-4 bg-slate-800 text-white flex justify-between items-center z-10 shadow-md">
+            <div>
+                <h1 class="text-xl font-bold flex items-center gap-2">
+                    ザリガニ・ライフ
+                    <button onclick="game.openCollection()" class="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded-full shadow transition transform active:scale-95">
+                        📖 記録室
+                    </button>
+                </h1>
+                <div class="text-xs text-gray-300 mt-1 flex gap-2">
+                    <span>世代: <span id="genDisplay">1</span>代目</span>
+                    <span id="geneticsDisplay" class="text-[10px] text-green-300 hidden">遺伝強化中✨</span>
+                </div>
+            </div>
+            <div class="text-right">
+                <div class="text-2xl font-bold text-yellow-400"><span id="scoreDisplay">0</span> pt</div>
+                <div class="text-xs">評価スコア</div>
+            </div>
+        </div>
+
+        <!-- 水槽 (ゲーム画面) -->
+        <div id="tank" class="tank-bg flex-grow relative cursor-pointer group">
+            <canvas id="gameCanvas" class="absolute top-0 left-0 w-full h-full z-10"></canvas>
+            <div class="sand"></div>
+            
+            <!-- ステータスUI -->
+            <div id="statusOverlay" class="absolute top-2 left-2 right-2 flex justify-between pointer-events-none z-20">
+                <div class="bg-white/80 backdrop-blur rounded p-2 text-xs shadow">
+                    <div>体長: <span id="sizeDisplay" class="font-bold text-lg">1.0</span> cm</div>
+                    <div class="flex items-center gap-1">色相: <span id="colorDisplay" class="inline-block w-3 h-3 rounded-full bg-red-500 border border-gray-400"></span></div>
+                    <div id="typeDisplay" class="font-bold text-indigo-600 mt-1 leading-tight">
+                        <div class="text-yellow-500 text-[9px] tracking-widest">★☆☆☆☆</div>
+                        🦞 ノーマル
+                    </div>
+                    <div class="flex gap-2 mt-1 text-[10px] text-gray-600 border-t border-gray-200 pt-1">
+                        <div>💨速度: <span id="speedDisplay" class="font-bold">1.0</span></div>
+                        <div>🛡️耐性: <span id="resistDisplay" class="font-bold">0</span>%</div>
+                    </div>
+                    <div id="abilityDisplay" class="text-[9px] text-purple-600 font-bold hidden mt-0.5 leading-tight">✨能力: <span id="abilityNameDisplay"></span></div>
+                </div>
+                <div class="bg-white/80 backdrop-blur rounded p-2 text-xs shadow text-right">
+                    <div>次の脱皮生存率</div>
+                    <div id="survivalRateDisplay" class="font-bold text-lg text-blue-600">95%</div>
+                </div>
+            </div>
+
+            <!-- ログ -->
+            <div id="messageLog" class="absolute bottom-16 left-0 w-full text-center pointer-events-none z-20 px-4">
+                <span class="bg-black/50 text-white px-3 py-1 rounded-full text-sm animate-pulse">ようこそ！エサをあげて育てよう。</span>
+            </div>
+
+            <!-- イベントUI群 -->
+            <div id="escapeUI" class="hidden absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+                <div class="bg-red-600 text-white font-bold text-xl px-4 py-2 rounded shadow-lg animate-bounce border-2 border-white">
+                    ⚠ 脱走中！タップして捕まえろ！
+                </div>
+            </div>
+
+            <div id="attackUI" class="hidden absolute inset-0 flex items-start justify-center pt-10 z-30 pointer-events-none">
+                <div class="bg-orange-500 text-white font-bold text-xl px-4 py-2 rounded shadow-lg animate-pulse border-2 border-white">
+                    👶 赤ちゃんの手だ！ザリガニをタップして土管へ逃がせ！
+                </div>
+            </div>
+
+            <!-- マッチングモード用UI (複数候補選択版) -->
+            <div id="matchingUI" class="hidden absolute inset-0 flex items-center justify-center z-30 bg-pink-500/30 pointer-events-none backdrop-blur-sm">
+                <div class="bg-white p-4 rounded-2xl shadow-2xl text-center pointer-events-auto border-4 border-pink-400 transform transition-all w-[95%] max-h-[90%] overflow-y-auto no-scrollbar">
+                    <h3 class="text-xl font-bold text-pink-600 mb-1 animate-pulse">💕 パートナー候補 💕</h3>
+                    <p class="text-[9px] text-gray-600 mb-3 bg-pink-50 p-2 rounded leading-tight">相手のレア度が高いほど成功率は下がります。<br>あなたのザリガニが優秀なら確率アップ！</p>
+                    
+                    <!-- 自分のステータス -->
+                    <div class="mb-3 text-left bg-gray-50 p-2 rounded-xl border border-gray-200 flex items-center justify-between">
+                        <div class="text-[10px] text-gray-500 font-bold w-12 text-center">あなた</div>
+                        <div class="flex items-center gap-1">
+                            <span class="text-xl" id="myTypeIconUI">🦞</span>
+                            <div class="flex flex-col">
+                                <div class="text-yellow-500 text-[8px] tracking-widest" id="myRarityUI">★☆☆☆☆</div>
+                                <div class="text-[10px] font-bold text-indigo-600 leading-none" id="myTypeNameUI">ノーマル</div>
+                            </div>
+                        </div>
+                        <div class="text-[10px] text-gray-700 text-right">
+                            <span id="mySizeUI" class="font-bold">1.0</span>cm | 💨 <span id="mySpeedUI">1.0</span> | 🛡️ <span id="myResistUI">0</span>%
+                        </div>
+                    </div>
+
+                    <!-- 候補リストコンテナ -->
+                    <div id="partnerCandidatesContainer" class="flex flex-col gap-2 mb-3">
+                        <!-- JSで候補が生成されます -->
+                    </div>
+
+                    <button onclick="game.resolveMatching(-1)" class="w-full bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 rounded-xl shadow transform active:scale-95 transition text-sm">
+                        全員見送る (キャンセル)
+                    </button>
+                </div>
+            </div>
+
+            <!-- モーダル -->
+            <div id="modalOverlay" class="hidden absolute inset-0 bg-black/90 z-40 flex flex-col items-center justify-center text-white p-4 text-center overflow-y-auto no-scrollbar">
+                <h2 id="modalTitle" class="text-3xl font-bold mb-2">タイトル</h2>
+                <p id="modalDesc" class="mb-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">説明文</p>
+                
+                <!-- 遺影コンテナ (追加) -->
+                <div id="memorialContainer" class="hidden flex-col items-center w-full max-w-[320px]">
+                    <img id="memorialImage" class="w-full rounded-xl border-4 border-slate-600 shadow-2xl mb-3" src="" alt="生きた証">
+                    <div class="flex gap-2 w-full justify-center mb-4">
+                        <button id="downloadBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl shadow text-xs flex items-center justify-center gap-1 transition">
+                            ⬇️ 画像保存
+                        </button>
+                        <button id="shareBtn" class="flex-1 bg-black hover:bg-gray-800 text-white font-bold py-2 rounded-xl shadow text-xs border border-gray-700 flex items-center justify-center gap-1 transition">
+                            𝕏 シェア
+                        </button>
+                    </div>
+                </div>
+
+                <button id="modalBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-10 rounded-full shadow-lg transition transform active:scale-95 mt-2">
+                    次へ
+                </button>
+            </div>
+
+            <!-- 図鑑＆ランキングモーダル -->
+            <div id="collectionModal" class="hidden absolute inset-0 bg-slate-900/95 z-50 flex flex-col items-center justify-start text-white p-4 overflow-y-auto no-scrollbar">
+                <div class="sticky top-0 bg-slate-900/95 w-full text-center pb-2 pt-2 z-10">
+                    <h2 class="text-2xl font-bold text-indigo-300">📖 記録室</h2>
+                    <div class="flex justify-center gap-2 mt-3">
+                        <button id="tabCollection" onclick="game.switchTab('collection')" class="px-5 py-2 bg-indigo-500 text-white rounded-full text-sm font-bold shadow-md transition">発見図鑑</button>
+                        <button id="tabRanking" onclick="game.switchTab('ranking')" class="px-5 py-2 bg-slate-700 text-gray-300 rounded-full text-sm font-bold shadow-md transition">歴代ランキング</button>
+                    </div>
+                </div>
+                
+                <!-- 図鑑グリッド -->
+                <div id="collectionGrid" class="grid grid-cols-2 gap-3 w-full max-w-sm pb-20 pt-4"></div>
+                <!-- ランキングリスト -->
+                <div id="rankingGrid" class="hidden flex-col gap-2 w-full max-w-sm pb-20 pt-4"></div>
+
+                <button onclick="document.getElementById('collectionModal').classList.add('hidden')" class="fixed bottom-6 bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-12 rounded-full shadow-xl transition transform active:scale-95 z-20">
+                    閉じる
+                </button>
+            </div>
+        </div>
+
+        <!-- コントロールパネル -->
+        <div class="bg-gray-50 p-4 z-10 border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+            <div class="mb-3 space-y-2">
+                <div>
+                    <div class="flex justify-between text-xs mb-1 font-bold text-gray-500">
+                        <span>成長度 (脱皮まで)</span>
+                        <span id="growthPercent">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-300 rounded-full h-3 overflow-hidden shadow-inner">
+                        <div id="growthBar" class="bg-green-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs mb-1 font-bold text-gray-500">
+                        <span>水質 (低すぎると生存率悪化)</span>
+                        <span id="waterPercent">100%</span>
+                    </div>
+                    <div class="w-full bg-gray-300 rounded-full h-3 overflow-hidden shadow-inner">
+                        <div id="waterBar" class="bg-blue-400 h-3 rounded-full transition-all duration-500" style="width: 100%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-5 gap-2">
+                <button onclick="game.feed('red')" class="flex flex-col items-center justify-center p-2 bg-white border border-red-200 rounded-xl hover:bg-red-50 active:bg-red-100 transition shadow-sm">
+                    <span class="text-xl">🪱</span><span class="text-[10px] font-bold text-red-600 mt-1">赤虫</span>
+                </button>
+                <button onclick="game.feed('green')" class="flex flex-col items-center justify-center p-2 bg-white border border-green-200 rounded-xl hover:bg-green-50 active:bg-green-100 transition shadow-sm">
+                    <span class="text-xl">🌿</span><span class="text-[10px] font-bold text-green-600 mt-1">水草</span>
+                </button>
+                <button onclick="game.feed('blue')" class="flex flex-col items-center justify-center p-2 bg-white border border-blue-200 rounded-xl hover:bg-blue-50 active:bg-blue-100 transition shadow-sm">
+                    <span class="text-xl">🐟</span><span class="text-[10px] font-bold text-blue-600 mt-1">サバ</span>
+                </button>
+                <button id="waterBtn" onclick="game.changeWater()" class="flex flex-col items-center justify-center p-2 bg-white border border-cyan-200 rounded-xl hover:bg-cyan-50 active:bg-cyan-100 transition shadow-sm disabled:opacity-50">
+                    <span class="text-xl">💧</span><span class="text-[10px] font-bold text-cyan-600 mt-1">水換(<span id="waterCount">3</span>)</span>
+                </button>
+                <button id="moltBtn" onclick="game.attemptMolt()" disabled class="flex flex-col items-center justify-center p-2 bg-gray-300 text-gray-500 rounded-xl font-bold shadow-sm transition disabled:opacity-50 enabled:bg-yellow-400 enabled:text-yellow-900 enabled:animate-pulse enabled:border enabled:border-yellow-500">
+                    <span class="text-xl">✨</span><span class="text-[10px] mt-1">脱皮</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全30種類の図鑑データ定義 (レア度1〜5を追加、特殊能力も追加)
+        const CRAYFISH_TYPES = {
+            // Rarity 1
+            normal: { name: 'ノーマル', icon: '🦞', color: 'bg-red-500', desc: 'ごく普通のザリガニ。エサで色が変わる。', rarity: 1 },
+            
+            // Rarity 2
+            ocean: { name: '深海ザリガニ', icon: '🌊', color: 'bg-blue-800', desc: '深い青色。青いエサをたくさん食べると現れる。', rarity: 2 },
+            blood: { name: 'ブラッド', icon: '🩸', color: 'bg-red-900', desc: '血のように赤い。赤いエサと少しのストレスで変異。', rarity: 2 },
+            nature: { name: 'フォレスト', icon: '🌳', color: 'bg-green-700', desc: '森の力を宿す。緑のエサを食べ、健康に育つと変異。', rarity: 2 },
+            clown: { name: 'ピエロザリガニ', icon: '🤡', color: 'bg-pink-500', desc: '派手で滑稽な姿。エサの偏りが激しいと現れる。', rarity: 2 },
+            mummy: { name: 'ミイラ', icon: '🤕', color: 'bg-yellow-700', desc: '乾燥したような色。少し水質が悪いと変異しやすい。', rarity: 2 },
+            
+            // Rarity 3
+            gold: { name: '黄金のザリガニ', icon: '✨', color: 'bg-yellow-400', desc: '富の象徴。黄色いエサを食べ続けた変異体。', rarity: 3 },
+            sakura: { name: '桜ザリガニ', icon: '🌸', color: 'bg-pink-300', desc: '美しい桜色の殻を持つ。', rarity: 3 },
+            ninja: { name: '忍者ザリガニ', icon: '🥷', color: 'bg-slate-800', desc: '闇に紛れる黒き暗殺者。', rarity: 3 },
+            ghost: { name: 'ゴースト', icon: '👻', color: 'bg-gray-300', desc: '半透明の青白い体。水質が悪い時に青いエサを食べると出現。', rarity: 3 },
+            ice: { name: '氷結ザリガニ', icon: '❄️', color: 'bg-cyan-100', desc: '氷のように冷たい体。青いエサのみで低ストレスだと現れる。', rarity: 3 },
+            poison: { name: '猛毒ザリガニ', icon: '☠️', color: 'bg-purple-600', desc: '毒々しい紫と緑。水質最悪の環境で緑のエサを食べると変異。', rarity: 3 },
+            shadow: { name: 'シャドウ', icon: '🌑', color: 'bg-black', desc: '光を吸収する黒。すべての色が均等に低いと現れる。', rarity: 3 },
+            neon: { name: 'ネオン', icon: '💡', color: 'bg-fuchsia-400', desc: 'チカチカ光る派手な体。スピードが極端に高いと変異。', rarity: 3 },
+            fairy: { name: '妖精ザリガニ', icon: '🧚', color: 'bg-teal-200', desc: '小さくて素早い。小さいまま生き延びると突然変異する。', rarity: 3 },
+
+            // Rarity 4 (特殊能力あり)
+            crystal: { name: 'クリスタル', icon: '💎', color: 'bg-cyan-200', desc: '体が透き通った神秘的な変異体。', rarity: 4, ability: '光合成', abilityDesc: '水質が良いと時間経過で少し成長する' },
+            mecha: { name: 'メカザリガニ', icon: '🤖', color: 'bg-gray-500', desc: 'ストレスでサイボーグ化した哀しき姿。', rarity: 4, ability: '装甲', abilityDesc: '水質悪化によるストレスが少し軽減される' },
+            magma: { name: 'マグマザリガニ', icon: '🌋', color: 'bg-red-700', desc: '体内からマグマが溢れる巨体。', rarity: 4, ability: '消化促進', abilityDesc: 'エサを食べた時の成長度が1.5倍になる' },
+            zombie: { name: 'ゾンビザリガニ', icon: '🧟', color: 'bg-lime-800', desc: '最悪の水質を生き抜いたアンデッド。', rarity: 4, ability: 'アンデッド', abilityDesc: '脱皮失敗時に低確率で生き残る' },
+            angel: { name: '天使ザリガニ', icon: '👼', color: 'bg-white', desc: '神々しい白い姿。ストレス0で大きく育つと現れる。', rarity: 4, ability: '浄化', abilityDesc: 'エサの食べ残しによる水質悪化が半減する' },
+            devil: { name: '悪魔ザリガニ', icon: '👿', color: 'bg-red-950', desc: '邪悪なオーラ。高いストレスと赤い体で変異。', rarity: 4, ability: '暴食', abilityDesc: 'エサの成長度が2倍になるが、水質悪化も激しい' },
+            sun: { name: '太陽ザリガニ', icon: '☀️', color: 'bg-orange-500', desc: '太陽のように眩しい。黄色く巨大に育つと現れる。', rarity: 4, ability: '活力', abilityDesc: '水質が良い時のストレス自然回復量が2倍になる' },
+            moon: { name: '月光ザリガニ', icon: '🌙', color: 'bg-blue-200', desc: '月の光を反射する。シアン色で巨大に育つと現れる。', rarity: 4, ability: '静寂', abilityDesc: '脱走イベントが一切発生しなくなる' },
+            cyborg: { name: 'サイボーグ', icon: '🦾', color: 'bg-slate-400', desc: 'メカの発展系。機械と生体が融合している。', rarity: 4, ability: '学習', abilityDesc: '脱皮成功時に自身の速度と耐性が微増する' },
+            pixel: { name: 'ピクセル', icon: '👾', color: 'bg-gray-400', desc: 'なぜか解像度が粗い。色が完全にグレーだと現れるバグ個体。', rarity: 4, ability: 'バグ', abilityDesc: 'エサによる成長度がランダムに大きくブレる' },
+
+            // Rarity 5 (強力な特殊能力)
+            alien: { name: 'エイリアン', icon: '👽', color: 'bg-green-500', desc: '地球外生命体のように変異してしまった。', rarity: 5, ability: '環境適応', abilityDesc: '水質が常に最高状態に保たれる' },
+            rainbow: { name: 'レインボー', icon: '🌈', color: 'bg-gradient-to-r from-red-400 via-green-400 to-blue-400', desc: 'すべてのエサを偏りなく食べた幻の個体。', rarity: 5, ability: '虹の加護', abilityDesc: '脱皮の基本生存率が常に+5%される' },
+            king: { name: 'キングザリガニ', icon: '👑', color: 'bg-yellow-600', desc: '類まれなる巨体を誇るザリガニ界の王。', rarity: 5, ability: '王の威厳', abilityDesc: 'マッチング時に相手が承諾しやすくなる' },
+            galaxy: { name: '銀河ザリガニ', icon: '🌌', color: 'bg-indigo-900', desc: '体の中に宇宙が広がる。極限まで育て上げると稀に出現。', rarity: 5, ability: '真理', abilityDesc: '交配時、子に強力なステータスを遺伝させる' },
+            dragon: { name: 'ドラゴン', icon: '🐉', color: 'bg-emerald-600', desc: 'もはやザリガニではない。伝説の姿。巨大かつ高耐性で出現。', rarity: 5, ability: '竜鱗', abilityDesc: '赤ちゃんからの攻撃やストレス増加を確率で無効化する' }
+        };
+
+        class CrayfishGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.width = 0;
+                this.height = 0;
+                
+                this.generation = 1;
+                this.isGameOver = false;
+                this.hasChild = false;
+                
+                this.isEscaping = false;
+                this.escapeStartTime = 0;
+                this.isMatching = false;
+                this.partnerCandidates = [];
+                this.isUnderAttack = false;
+                this.attackTimer = 0;
+                this.enemyX = 0;
+                this.enemyY = 0;
+
+                this.lastTime = performance.now();
+                this.waterQuality = 100;
+                this.waterChangeCount = 3; 
+
+                this.collection = JSON.parse(localStorage.getItem('crayfishCollection')) || ['normal'];
+                this.ranking = JSON.parse(localStorage.getItem('crayfishRanking')) || [];
+
+                this.savedPartner = null;
+
+                this.crayfish = {
+                    x: 0, y: 0, targetX: 0, targetY: 0, angle: 0,
+                    size: 1.0, color: { r: 180, g: 50, b: 50 }, type: 'normal', 
+                    speedStats: 1.0, stressResist: 0,
+                    growth: 0, baseSurvivalRate: 0.95, stress: 0, 
+                    state: 'IDLE', isFleeingToPipe: false
+                };
+
+                this.foods = [];
+                this.bubbles = [];
+                
+                this.bindEvents();
+                this.resize();
+                this.resetGame();
+                this.loop(performance.now());
+
+                setInterval(() => {
+                    this.checkRandomEvents();
+                    this.applyWaterQualityEffects();
+                }, 5000);
+            }
+
+            saveData() { 
+                localStorage.setItem('crayfishCollection', JSON.stringify(this.collection)); 
+                localStorage.setItem('crayfishRanking', JSON.stringify(this.ranking));
+            }
+
+            unlockType(type) {
+                if (!this.collection.includes(type)) {
+                    this.collection.push(type);
+                    this.saveData();
+                    return true; 
+                }
+                return false;
+            }
+
+            recordRanking() {
+                this.ranking.push({
+                    gen: this.generation,
+                    size: parseFloat(this.crayfish.size.toFixed(1)),
+                    type: this.crayfish.type,
+                    score: this.calcScore(),
+                    date: new Date().toLocaleDateString()
+                });
+                this.ranking.sort((a, b) => b.size - a.size);
+                if (this.ranking.length > 10) this.ranking.pop();
+                this.saveData();
+            }
+
+            switchTab(tab) {
+                const colBtn = document.getElementById('tabCollection');
+                const rankBtn = document.getElementById('tabRanking');
+                const colGrid = document.getElementById('collectionGrid');
+                const rankGrid = document.getElementById('rankingGrid');
+
+                if (tab === 'collection') {
+                    colBtn.className = "px-5 py-2 bg-indigo-500 text-white rounded-full text-sm font-bold shadow-md transition";
+                    rankBtn.className = "px-5 py-2 bg-slate-700 text-gray-300 rounded-full text-sm font-bold shadow-md transition";
+                    colGrid.classList.remove('hidden'); colGrid.classList.add('grid');
+                    rankGrid.classList.add('hidden'); rankGrid.classList.remove('flex');
+                } else {
+                    rankBtn.className = "px-5 py-2 bg-indigo-500 text-white rounded-full text-sm font-bold shadow-md transition";
+                    colBtn.className = "px-5 py-2 bg-slate-700 text-gray-300 rounded-full text-sm font-bold shadow-md transition";
+                    rankGrid.classList.remove('hidden'); rankGrid.classList.add('flex');
+                    colGrid.classList.add('hidden'); colGrid.classList.remove('grid');
+                }
+            }
+
+            openCollection() {
+                const colGrid = document.getElementById('collectionGrid');
+                colGrid.innerHTML = ''; 
+                
+                const sortedKeys = Object.keys(CRAYFISH_TYPES).sort((a, b) => CRAYFISH_TYPES[a].rarity - CRAYFISH_TYPES[b].rarity);
+
+                sortedKeys.forEach(key => {
+                    const info = CRAYFISH_TYPES[key];
+                    const isUnlocked = this.collection.includes(key);
+                    const stars = '★'.repeat(info.rarity) + '☆'.repeat(5 - info.rarity);
+                    const card = document.createElement('div');
+                    card.className = `p-3 rounded-xl border-2 ${isUnlocked ? 'bg-slate-800 border-indigo-400' : 'bg-slate-900 border-gray-700'} flex flex-col items-center text-center gap-1 relative overflow-hidden`;
+                    
+                    if (isUnlocked) {
+                        let abilityHtml = '';
+                        if (info.ability) {
+                            abilityHtml = `<div class="mt-1 bg-purple-100 text-purple-700 text-[8px] px-1 py-0.5 rounded font-bold">✨${info.ability}: ${info.abilityDesc}</div>`;
+                        }
+                        card.innerHTML = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-2xl shadow-lg border-2 border-white ${info.color}">${info.icon}</div>
+                            <div class="text-yellow-400 text-[9px] mt-1 tracking-widest">${stars}</div>
+                            <h3 class="font-bold text-white text-sm leading-tight">${info.name}</h3>
+                            <p class="text-[9px] text-gray-300 leading-tight">${info.desc}</p>
+                            ${abilityHtml}`;
+                    } else {
+                        card.innerHTML = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-lg border-2 border-gray-600 bg-gray-800 text-gray-600">❓</div>
+                            <div class="text-gray-600 text-[9px] mt-1 tracking-widest">${stars}</div>
+                            <h3 class="font-bold text-gray-500 text-sm leading-tight">？？？</h3>
+                            <p class="text-[9px] text-gray-600 leading-tight">未知の変異種。</p>`;
+                    }
+                    colGrid.appendChild(card);
+                });
+
+                const rankGrid = document.getElementById('rankingGrid');
+                rankGrid.innerHTML = '';
+                if (this.ranking.length === 0) {
+                    rankGrid.innerHTML = '<div class="text-center text-gray-400 py-10">まだ記録がありません。<br>ザリガニが死ぬと記録されます。</div>';
+                } else {
+                    this.ranking.forEach((r, idx) => {
+                        const info = CRAYFISH_TYPES[r.type] || CRAYFISH_TYPES['normal'];
+                        const rankStyle = idx < 3 ? ["text-yellow-400 text-xl", "text-gray-300 text-lg", "text-amber-600 text-md"][idx] : "text-gray-500 text-sm";
+                        
+                        const item = document.createElement('div');
+                        item.className = "bg-slate-800 border border-slate-600 p-3 rounded-xl flex items-center justify-between";
+                        item.innerHTML = `
+                            <div class="flex items-center gap-3">
+                                <div class="font-bold ${rankStyle} w-6 text-center">${idx + 1}</div>
+                                <div class="w-10 h-10 rounded-full flex items-center justify-center text-xl shadow border border-white/20 ${info.color}">${info.icon}</div>
+                                <div>
+                                    <div class="font-bold text-white">${r.size} cm <span class="text-[10px] font-normal text-indigo-300 ml-1">第${r.gen}世代</span></div>
+                                    <div class="text-[10px] text-gray-400">${info.name}</div>
+                                </div>
+                            </div>
+                            <div class="text-right text-xs text-gray-500">
+                                <div class="text-yellow-500 font-bold">${r.score}pt</div>
+                                <div>${r.date}</div>
+                            </div>
+                        `;
+                        rankGrid.appendChild(item);
+                    });
+                }
+                this.switchTab('collection');
+                document.getElementById('collectionModal').classList.remove('hidden');
+            }
+
+            resize() {
+                const rect = this.canvas.parentElement.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height;
+                this.width = rect.width;
+                this.height = rect.height;
+                if(this.crayfish.x === 0) {
+                    this.crayfish.x = this.width / 2;
+                    this.crayfish.y = this.height - 80;
+                    this.crayfish.targetX = this.crayfish.x;
+                    this.crayfish.targetY = this.crayfish.y;
+                }
+            }
+
+            resetGame(inherit = false) {
+                this.isGameOver = false;
+                this.isEscaping = false;
+                this.isMatching = false;
+                this.isUnderAttack = false;
+                this.hasChild = false;
+                this.waterQuality = 100;
+                this.waterChangeCount = 3;
+                
+                this.crayfish.size = 1.0;
+                this.crayfish.growth = 0;
+                this.crayfish.stress = 0;
+                this.crayfish.state = 'IDLE';
+                this.crayfish.isFleeingToPipe = false;
+                this.crayfish.x = this.width / 2;
+                this.crayfish.y = this.height - 80;
+                this.crayfish.targetX = this.crayfish.x;
+                this.crayfish.targetY = this.crayfish.y;
+                this.foods = [];
+                this.bubbles = [];
+
+                if (inherit && this.savedPartner) {
+                    const pC = this.crayfish.color;
+                    const parC = this.savedPartner.color;
+                    this.crayfish.color = {
+                        r: (pC.r + parC.r) / 2, g: (pC.g + parC.g) / 2, b: (pC.b + parC.b) / 2
+                    };
+                    
+                    let avgSpeed = (this.crayfish.speedStats + this.savedPartner.speedStats) / 2;
+                    let avgResist = (this.crayfish.stressResist + this.savedPartner.stressResist) / 2;
+                    
+                    if (this.crayfish.type === 'galaxy' || this.savedPartner.type === 'galaxy') {
+                        avgSpeed += 0.5;
+                        avgResist += 10;
+                    }
+
+                    this.crayfish.speedStats = parseFloat((avgSpeed + Math.random() * 0.1).toFixed(2));
+                    this.crayfish.stressResist = Math.min(80, Math.floor(avgResist + Math.random() * 5)); 
+                    
+                    this.crayfish.baseSurvivalRate = 0.98 + (this.crayfish.size / 200);
+                    this.crayfish.baseSurvivalRate = Math.min(0.99, this.crayfish.baseSurvivalRate);
+
+                    document.getElementById('geneticsDisplay').classList.remove('hidden');
+                    this.showMessage("💕 遺伝子が引き継がれ、優秀な子ザリガニが誕生しました！");
+                } else {
+                    this.crayfish.color = { r: 180, g: 50, b: 50 };
+                    this.crayfish.type = 'normal';
+                    this.crayfish.speedStats = 1.0;
+                    this.crayfish.stressResist = 0;
+                    this.crayfish.baseSurvivalRate = 0.98;
+                    document.getElementById('geneticsDisplay').classList.add('hidden');
+                    if (this.generation > 1) {
+                        this.showMessage("新たなザリガニを飼育し始めました。");
+                    }
+                }
+                
+                this.savedPartner = null;
+                this.updateUI();
+                this.stopAlert();
+            }
+
+            bindEvents() {
+                window.addEventListener('resize', () => this.resize());
+                
+                this.canvas.addEventListener('mousedown', (e) => this.handleInput(e));
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); 
+                    this.handleInput(e.touches[0]);
+                }, { passive: false });
+
+                document.getElementById('modalBtn').addEventListener('click', () => {
+                    document.getElementById('modalOverlay').classList.add('hidden');
+                    if(this.isGameOver) {
+                        this.generation++;
+                        document.getElementById('genDisplay').innerText = this.generation;
+                        this.resetGame(this.hasChild);
+                    }
+                });
+
+                document.getElementById('downloadBtn').addEventListener('click', () => {
+                    const a = document.createElement('a');
+                    a.href = document.getElementById('memorialImage').src;
+                    a.download = `crayfish_gen${this.generation}.png`;
+                    a.click();
+                });
+
+                document.getElementById('shareBtn').addEventListener('click', async () => {
+                    const dataUrl = document.getElementById('memorialImage').src;
+                    const info = CRAYFISH_TYPES[this.crayfish.type];
+                    const text = `ザリガニ・ライフで第${this.generation}世代のザリガニが天寿を全うしました🦐\nサイズ: ${this.crayfish.size.toFixed(1)}cm\n種類: ${info.name}\nスコア: ${this.calcScore()}pt\n\n#ザリガニライフ`;
+                    
+                    try {
+                        const res = await fetch(dataUrl);
+                        const blob = await res.blob();
+                        const file = new File([blob], `crayfish_gen${this.generation}.png`, { type: 'image/png' });
+                        
+                        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                            await navigator.share({
+                                text: text,
+                                files: [file]
+                            });
+                            return;
+                        }
+                    } catch(e) {
+                        console.log('Share API not supported or failed', e);
+                    }
+                    
+                    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+                    window.open(url, '_blank');
+                });
+            }
+
+            handleInput(e) {
+                if (this.isGameOver || this.isMatching) return;
+                const rect = this.canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                if (this.isEscaping) {
+                    if (Math.hypot(x - this.crayfish.x, y - this.crayfish.y) < (this.crayfish.size * 10) + 40) {
+                        this.catchCrayfish();
+                    }
+                    return;
+                }
+                if (this.isUnderAttack) {
+                    if (Math.hypot(x - this.crayfish.x, y - this.crayfish.y) < (this.crayfish.size * 10) + 40) {
+                        this.crayfish.isFleeingToPipe = true;
+                        this.showMessage("急いで土管に隠れろ！");
+                    }
+                    return;
+                }
+                
+                if (y > this.height - 150) {
+                    this.crayfish.targetX = x;
+                    this.crayfish.targetY = y;
+                }
+            }
+
+            checkRandomEvents() {
+                if (this.isGameOver || this.isEscaping || this.isMatching || this.isUnderAttack) return;
+                
+                if (this.crayfish.size >= 10.0 && !this.hasChild) {
+                    if (Math.random() < 0.15) {
+                        this.startMatching();
+                        return;
+                    }
+                }
+
+                const myInfo = CRAYFISH_TYPES[this.crayfish.type];
+                
+                if (myInfo.ability !== '静寂' && Math.random() < 0.05) {
+                    this.startEscape();
+                } else if (Math.random() < 0.10) {
+                    this.startAttack();
+                }
+            }
+
+            applyWaterQualityEffects() {
+                if (this.isGameOver || this.isEscaping) return;
+                
+                const myInfo = CRAYFISH_TYPES[this.crayfish.type];
+
+                if (this.waterQuality <= 30) {
+                    let damage = 0.05;
+                    if (myInfo.ability === '装甲') damage -= 0.02;
+                    
+                    const mitigatedDamage = damage * (1 - (this.crayfish.stressResist / 100));
+                    this.crayfish.stress += Math.max(0, mitigatedDamage); 
+                    this.showMessage("⚠ 水質が悪化しています！生存率が下がりました。");
+                } else if (this.waterQuality >= 80) {
+                    let heal = 0.02;
+                    if (myInfo.ability === '活力') heal *= 2;
+
+                    if (this.crayfish.stress > 0) {
+                        this.crayfish.stress = Math.max(0, this.crayfish.stress - heal);
+                    }
+                }
+                this.updateUI();
+            }
+
+            startMatching() {
+                this.isMatching = true;
+                this.crayfish.state = 'MATCHING';
+                
+                this.partnerCandidates = [];
+                const container = document.getElementById('partnerCandidatesContainer');
+                container.innerHTML = '';
+
+                const mySize = this.crayfish.size;
+                const mySpeed = this.crayfish.speedStats;
+                const myResist = this.crayfish.stressResist;
+                const myInfo = CRAYFISH_TYPES[this.crayfish.type];
+
+                for (let i = 0; i < 3; i++) {
+                    let pType = 'normal';
+                    let pColor = { r: Math.random()*255, g: Math.random()*255, b: Math.random()*255 };
+                    
+                    if (Math.random() < 0.6) { 
+                        const types = Object.keys(CRAYFISH_TYPES).filter(k => k !== 'normal');
+                        pType = types[Math.floor(Math.random() * types.length)];
+                        
+                        if(pType === 'gold') pColor = {r:255, g:215, b:0};
+                        else if(pType === 'crystal') pColor = {r:224, g:255, b:255};
+                        else if(pType === 'sakura') pColor = {r:255, g:183, b:197};
+                        else if(pType === 'alien') pColor = {r:50, g:205, b:50};
+                        else if(pType === 'blood') pColor = {r:139, g:0, b:0};
+                        else if(pType === 'ocean') pColor = {r:0, g:0, b:139};
+                        else if(pType === 'shadow') pColor = {r:20, g:20, b:20};
+                    }
+
+                    const info = CRAYFISH_TYPES[pType];
+                    const genBonus = this.generation * 0.1;
+                    const pSpeed = parseFloat((1.0 + Math.random() * 0.5 + genBonus + (info.rarity * 0.2)).toFixed(2));
+                    const pResist = Math.floor(Math.random() * 10) + (this.generation * 2) + (info.rarity * 8);
+                    const pSize = mySize * (0.5 + Math.random() * 0.5) + (info.rarity * 1.0); 
+
+                    let prob = 80; 
+                    prob -= (info.rarity - 1) * 15; 
+                    
+                    if (mySize >= pSize) prob += 15; 
+                    if (mySpeed >= pSpeed) prob += 10;
+                    if (myResist >= pResist) prob += 10;
+                    prob += (myInfo.rarity - 1) * 10; 
+
+                    if (myInfo.ability === '王の威厳') prob += 30;
+
+                    prob = Math.max(5, Math.min(95, Math.floor(prob)));
+
+                    const cand = {
+                        size: pSize, color: pColor, type: pType, 
+                        speedStats: pSpeed, stressResist: pResist,
+                        successRate: prob
+                    };
+                    this.partnerCandidates.push(cand);
+
+                    const probColor = prob >= 70 ? 'text-green-600' : (prob >= 40 ? 'text-yellow-600' : 'text-red-600');
+                    const stars = '★'.repeat(info.rarity) + '☆'.repeat(5 - info.rarity);
+
+                    const card = document.createElement('div');
+                    card.className = "bg-white p-2 rounded-xl shadow-sm border border-pink-200 flex items-center justify-between";
+                    card.innerHTML = `
+                        <div class="flex items-center gap-2 w-7/12">
+                            <div class="text-2xl w-8 text-center">${info.icon}</div>
+                            <div class="text-left w-full overflow-hidden">
+                                <div class="text-yellow-500 text-[8px] tracking-widest leading-none">${stars}</div>
+                                <div class="text-[10px] font-bold text-indigo-600 truncate leading-none mt-1">${info.name}</div>
+                                <div class="text-[9px] text-gray-500 font-medium mt-1">
+                                    ${cand.size.toFixed(1)}cm | 💨${cand.speedStats.toFixed(2)} | 🛡️${cand.stressResist}%
+                                </div>
+                            </div>
+                        </div>
+                        <div class="w-5/12 flex flex-col items-end justify-between h-full py-1">
+                            <div class="text-[9px] font-bold mb-1 bg-gray-50 px-2 py-0.5 rounded">成功率: <span class="${probColor} text-xs">${prob}%</span></div>
+                            <button onclick="game.resolveMatching(${i})" class="bg-pink-500 hover:bg-pink-600 text-white font-bold py-1.5 px-3 rounded-lg shadow text-[10px] transform active:scale-95 transition">
+                                アピール
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                }
+
+                document.getElementById('mySizeUI').innerText = this.crayfish.size.toFixed(1);
+                document.getElementById('myTypeNameUI').innerText = myInfo.name;
+                document.getElementById('myTypeIconUI').innerText = myInfo.icon;
+                document.getElementById('myRarityUI').innerText = '★'.repeat(myInfo.rarity) + '☆'.repeat(5 - myInfo.rarity);
+                document.getElementById('mySpeedUI').innerText = this.crayfish.speedStats.toFixed(2);
+                document.getElementById('myResistUI').innerText = this.crayfish.stressResist;
+
+                document.getElementById('matchingUI').classList.remove('hidden');
+                this.showMessage("💕 複数のパートナー候補が現れました！");
+            }
+
+            resolveMatching(index) {
+                document.getElementById('matchingUI').classList.add('hidden');
+                this.isMatching = false;
+                this.crayfish.state = 'IDLE';
+                
+                if (index === -1) {
+                    this.partnerCandidates = [];
+                    this.showMessage("そっと距離を置きました。別の出会いを待ちます。");
+                    return;
+                }
+
+                const selectedPartner = this.partnerCandidates[index];
+                const roll = Math.random() * 100;
+                const success = roll < selectedPartner.successRate;
+
+                if (success) {
+                    this.hasChild = true;
+                    this.savedPartner = selectedPartner;
+                    this.crayfish.stress = 0;
+                    this.crayfish.baseSurvivalRate = 0.98;
+                    this.waterQuality = 100;
+                    this.waterChangeCount = 3;
+                    this.showMessage(`💕 ${CRAYFISH_TYPES[selectedPartner.type].name} との交配成功！卵が産まれました！`);
+                } else {
+                    this.crayfish.stress += 0.30; 
+                    this.showMessage(`💔 ${CRAYFISH_TYPES[selectedPartner.type].name} に振られてしまった… 大きなストレスを感じています。`);
+                }
+                
+                this.partnerCandidates = [];
+                this.updateUI();
+            }
+
+            startEscape() {
+                this.isEscaping = true;
+                this.crayfish.state = 'ESCAPING';
+                this.escapeStartTime = Date.now();
+                this.showMessage("⚠ ザリガニが脱走しようとしています！ タップして捕獲せよ！");
+                document.getElementById('tank').classList.add('alert-mode');
+                document.getElementById('escapeUI').classList.remove('hidden');
+                this.setRandomTarget();
+            }
+
+            setRandomTarget() {
+                if (!this.isEscaping) return;
+                this.crayfish.targetX = Math.random() * this.width;
+                this.crayfish.targetY = Math.random() * (this.height - 50); 
+                setTimeout(() => this.setRandomTarget(), 500 + Math.random() * 500);
+            }
+
+            catchCrayfish() {
+                const catchTime = (Date.now() - this.escapeStartTime) / 1000;
+                this.isEscaping = false;
+                this.crayfish.state = 'IDLE';
+                this.stopAlert();
+
+                let stressAdded = (catchTime > 2.0) ? (catchTime - 2.0) * 0.05 : 0;
+                stressAdded = stressAdded * (1 - (this.crayfish.stressResist / 100));
+                stressAdded = Math.min(stressAdded, 0.5);
+                
+                const myInfo = CRAYFISH_TYPES[this.crayfish.type];
+                if (myInfo.ability === '竜鱗' && Math.random() < 0.3) {
+                    stressAdded = 0;
+                    this.showMessage("竜鱗がストレスを跳ね返した！");
+                } else {
+                    const msg = stressAdded === 0 
+                        ? "ナイスキャッチ！ザリガニは落ち着いています。" 
+                        : `捕獲完了。暴れて体力を消耗しました (生存率ダウン: -${Math.floor(stressAdded*100)}%)`;
+                    this.showMessage(msg);
+                }
+                
+                this.crayfish.stress += stressAdded;
+                this.crayfish.targetY = this.height - 80;
+                this.updateUI();
+            }
+
+            startAttack() {
+                this.isUnderAttack = true;
+                this.attackTimer = 6000; 
+                this.enemyX = -50;
+                this.enemyY = 50;
+                this.crayfish.isFleeingToPipe = false;
+                this.showMessage("👶 赤ちゃんの手が伸びてきた！ザリガニをタップして土管へ逃がせ！");
+                document.getElementById('tank').classList.add('shadow-mode');
+                document.getElementById('attackUI').classList.remove('hidden');
+            }
+
+            resolveAttack(success) {
+                this.isUnderAttack = false;
+                this.crayfish.isFleeingToPipe = false;
+                this.stopAlert();
+                if (success) {
+                    this.showMessage("ふぅ、間一髪で土管に隠れられた！");
+                    this.crayfish.state = 'HIDDEN';
+                    setTimeout(() => { this.crayfish.state = 'IDLE'; }, 2000);
+                } else {
+                    const myInfo = CRAYFISH_TYPES[this.crayfish.type];
+                    if (myInfo.ability === '竜鱗' && Math.random() < 0.5) {
+                        this.showMessage("強靭な竜鱗が赤ちゃんの手を弾き返した！！");
+                    } else {
+                        let dmg = 0.40 * (1 - (this.crayfish.stressResist / 100)); 
+                        this.crayfish.stress += dmg;
+                        this.showMessage("👶 赤ちゃんにつままれた！大ダメージ！");
+                    }
+                }
+                this.updateUI();
+            }
+
+            stopAlert() {
+                document.getElementById('tank').classList.remove('alert-mode', 'shadow-mode');
+                document.getElementById('escapeUI').classList.add('hidden');
+                document.getElementById('attackUI').classList.add('hidden');
+                document.getElementById('matchingUI').classList.add('hidden');
+            }
+
+            feed(type) {
+                if (this.isGameOver || this.isEscaping || this.isMatching || this.isUnderAttack || this.crayfish.growth >= 100) return;
+                
+                this.foods.push({ 
+                    x: Math.random() * this.width, 
+                    y: 0, 
+                    typeId: type,
+                    color: type === 'red' ? '#ff6b6b' : (type === 'green' ? '#51cf66' : '#339af0'), 
+                    targetRgb: type === 'red' ? {r:220, g:80, b:80} : (type === 'green' ? {r:80, g:200, b:80} : {r:80, g:120, b:220}) 
+                });
+                this.showMessage("エサを落としました");
+                this.updateUI();
+            }
+
+            eatFood(food) {
+                const mixRate = 0.15;
+                this.crayfish.color.r = this.crayfish.color.r * (1 - mixRate) + food.targetRgb.r * mixRate;
+                this.crayfish.color.g = this.crayfish.color.g * (1 - mixRate) + food.targetRgb.g * mixRate;
+                this.crayfish.color.b = this.crayfish.color.b * (1 - mixRate) + food.targetRgb.b * mixRate;
+
+                const myInfo = CRAYFISH_TYPES[this.crayfish.type];
+                let growthToAdd = 20;
+
+                if (myInfo.ability === '消化促進') growthToAdd *= 1.5;
+                if (myInfo.ability === '暴食') { growthToAdd *= 2.0; this.waterQuality -= 5; } 
+                if (myInfo.ability === 'バグ') growthToAdd *= (Math.random() * 2);
+
+                this.crayfish.growth += growthToAdd; 
+                if (this.crayfish.growth > 100) this.crayfish.growth = 100;
+
+                if (this.crayfish.stress > 0) {
+                    this.crayfish.stress = Math.max(0, this.crayfish.stress - 0.01);
+                } else {
+                    this.crayfish.baseSurvivalRate = Math.min(0.98, this.crayfish.baseSurvivalRate + 0.01);
+                }
+
+                let wqDrop = 5;
+                if (myInfo.ability === '浄化') wqDrop = 2; 
+                this.waterQuality = Math.max(0, this.waterQuality - wqDrop);
+
+                this.updateUI();
+            }
+
+            changeWater() {
+                if (this.isGameOver || this.waterChangeCount <= 0) return;
+                this.waterQuality = 100;
+                this.waterChangeCount--;
+                this.showMessage("水換えをしました！水が綺麗になりました。");
+                this.updateUI();
+            }
+
+            attemptMolt() {
+                if (this.crayfish.growth < 100 || this.isMatching || this.isUnderAttack) return;
+
+                const myInfo = CRAYFISH_TYPES[this.crayfish.type];
+                const agePenalty = (this.crayfish.size - 1.0) * 0.02;
+                let survivalChance = this.crayfish.baseSurvivalRate - agePenalty - this.crayfish.stress;
+                
+                if (myInfo.ability === '虹の加護') survivalChance += 0.05;
+
+                if (Math.random() < survivalChance) {
+                    let newType = this.crayfish.type;
+                    let isMutated = false;
+                    let isNewDiscovery = false;
+
+                    if (this.crayfish.type === 'normal' && Math.random() < 0.50) {
+                        const { r, g, b } = this.crayfish.color;
+                        const size = this.crayfish.size;
+                        const wq = this.waterQuality;
+                        const stress = this.crayfish.stress;
+                        const speed = this.crayfish.speedStats;
+                        const resist = this.crayfish.stressResist;
+                        const saturation = Math.max(r, g, b) - Math.min(r, g, b);
+                        const avgColor = (r + g + b) / 3;
+
+                        // Rarity 5
+                        if (size >= 18.0 && saturation < 20) newType = 'galaxy';
+                        else if (size >= 16.0 && g > 150 && r > 100 && resist > 20) newType = 'dragon';
+                        else if (size >= 15.0) newType = 'king';
+                        else if (saturation < 30 && size >= 8.0) newType = 'rainbow'; 
+                        else if (g > 200 && r < 50 && b < 50 && stress > 0.1) newType = 'alien';
+                        
+                        // Rarity 4
+                        else if (r > 200 && g > 180 && b < 50 && size >= 12.0) newType = 'sun';
+                        else if (b > 200 && g > 180 && r < 50 && size >= 12.0) newType = 'moon';
+                        else if (r > 200 && stress > 0.3) newType = 'devil';
+                        else if (avgColor > 220 && stress === 0 && size >= 10.0) newType = 'angel';
+                        else if (wq <= 10) newType = 'zombie';
+                        else if (r > 180 && g < 80 && b < 80 && size >= 10.0) newType = 'magma';
+                        else if (r > 150 && b < 100 && g < 100 && stress > 0.25) newType = 'mecha';
+                        else if (avgColor > 100 && avgColor < 150 && saturation < 10) newType = 'pixel';
+                        else if (r > 100 && b < 100 && g < 100 && stress > 0.15 && resist > 10) newType = 'cyborg';
+                        else if (b > 180 && r < 80 && g < 150) newType = 'crystal';
+
+                        // Rarity 3
+                        else if (r > 150 && g > 150 && b < 100) newType = 'gold';
+                        else if (r > 150 && b > 150 && g < 120) newType = 'sakura';
+                        else if (saturation < 40 && stress > 0.1 && avgColor < 80) newType = 'ninja';
+                        else if (wq <= 30 && b > 150 && r < 100) newType = 'ghost';
+                        else if (b > 180 && g > 180 && r > 180 && stress === 0) newType = 'ice';
+                        else if (wq <= 20 && g > 150 && r < 100) newType = 'poison';
+                        else if (avgColor < 50) newType = 'shadow';
+                        else if (speed > 1.8 && Math.random() < 0.5) newType = 'neon';
+                        else if (size < 4.0 && this.generation > 2 && Math.random() < 0.2) newType = 'fairy';
+
+                        // Rarity 2
+                        else if (b > 180 && r < 50) newType = 'ocean';
+                        else if (r > 180 && g < 50 && b < 50 && stress > 0.1) newType = 'blood';
+                        else if (g > 180 && r < 100 && b < 100) newType = 'nature';
+                        else if (wq <= 40 && r > 100 && g > 100 && b < 80) newType = 'mummy';
+                        else if (saturation > 100 && speed > 1.2 && stress > 0.1) newType = 'clown';
+                    }
+
+                    if (newType !== this.crayfish.type) {
+                        this.crayfish.type = newType;
+                        isMutated = true;
+                        isNewDiscovery = this.unlockType(newType);
+                    }
+
+                    if (CRAYFISH_TYPES[this.crayfish.type].ability === '学習') {
+                        this.crayfish.speedStats += 0.1;
+                        this.crayfish.stressResist += 2;
+                    }
+
+                    this.crayfish.size += 1.5 + Math.random();
+                    this.crayfish.growth = 0;
+                    this.crayfish.stress = 0;
+                    this.crayfish.baseSurvivalRate *= 0.98;
+                    this.waterChangeCount = 3;
+                    this.waterQuality = 100;
+
+                    if (isMutated) {
+                        let title = isNewDiscovery ? "🌟 新種発見！！ 🌟" : "🎉 突然変異発生！";
+                        this.showModal(title, `なんと！ザリガニが【${CRAYFISH_TYPES[newType].name}】に進化しました！\n\n体が大きくなり、活力を取り戻しました。`);
+                        this.showMessage(`【${CRAYFISH_TYPES[newType].name}】への変異を確認！`);
+                    } else {
+                        this.showModal("脱皮成功！", `ザリガニは一回り大きくなりました。\n生存率が少しリセットされます。`);
+                        this.showMessage("体が大きくなりました！");
+                    }
+                } else {
+                    if (myInfo.ability === 'アンデッド' && Math.random() < 0.15) {
+                        this.crayfish.growth = 0;
+                        this.crayfish.stress = 0;
+                        this.showModal("奇跡の生還！", "脱皮に失敗したかに見えたが、ゾンビの力で生き残った…！\n(成長はしませんでした)");
+                    } else {
+                        this.isGameOver = true;
+                        this.crayfish.state = 'DEAD';
+                        this.recordRanking();
+
+                        let desc = `脱皮不全で死んでしまいました。\n`;
+                        if (this.hasChild) desc += `\nしかし、残された子ザリガニが能力を受け継ぎ、新たな世代を紡ぎます！`;
+                        else desc += `\n血脈はここで途絶えてしまった…(第1世代からやり直し)`;
+                        
+                        this.showModal("脱皮失敗...", desc, true);
+                    }
+                }
+                this.updateUI();
+            }
+
+            calcCurrentSurvivalRate() {
+                const agePenalty = (this.crayfish.size - 1.0) * 0.02;
+                let base = this.crayfish.baseSurvivalRate - agePenalty - this.crayfish.stress;
+                if (CRAYFISH_TYPES[this.crayfish.type].ability === '虹の加護') base += 0.05;
+                return Math.max(0, Math.min(100, Math.floor(base * 100)));
+            }
+
+            calcScore() {
+                const {r, g, b} = this.crayfish.color;
+                const saturation = Math.max(r, g, b) - Math.min(r, g, b); 
+                const info = CRAYFISH_TYPES[this.crayfish.type];
+                return Math.floor((this.crayfish.size * 100 + saturation * 2) * info.rarity);
+            }
+
+            updateUI() {
+                document.getElementById('sizeDisplay').innerText = this.crayfish.size.toFixed(1);
+                const c = this.crayfish.color;
+                document.getElementById('colorDisplay').style.backgroundColor = `rgb(${Math.floor(c.r)},${Math.floor(c.g)},${Math.floor(c.b)})`;
+                
+                const typeInfo = CRAYFISH_TYPES[this.crayfish.type];
+                const stars = '★'.repeat(typeInfo.rarity) + '☆'.repeat(5 - typeInfo.rarity);
+                document.getElementById('typeDisplay').innerHTML = `<div class="text-yellow-500 text-[9px] tracking-widest">${stars}</div>${typeInfo.icon} <span class="bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-600">${typeInfo.name}</span>`;
+                
+                const abilityUI = document.getElementById('abilityDisplay');
+                if (typeInfo.ability) {
+                    document.getElementById('abilityNameDisplay').innerText = typeInfo.ability;
+                    abilityUI.classList.remove('hidden');
+                } else {
+                    abilityUI.classList.add('hidden');
+                }
+
+                document.getElementById('speedDisplay').innerText = this.crayfish.speedStats.toFixed(2);
+                document.getElementById('resistDisplay').innerText = this.crayfish.stressResist;
+
+                document.getElementById('growthBar').style.width = `${this.crayfish.growth}%`;
+                document.getElementById('growthPercent').innerText = `${Math.floor(this.crayfish.growth)}%`;
+
+                const waterBar = document.getElementById('waterBar');
+                const waterPercent = document.getElementById('waterPercent');
+                if (waterBar) {
+                    waterBar.style.width = `${this.waterQuality}%`;
+                    waterPercent.innerText = `${Math.floor(this.waterQuality)}%`;
+                    if (this.waterQuality <= 30) waterBar.className = "bg-red-500 h-3 rounded-full transition-all duration-500";
+                    else if (this.waterQuality <= 60) waterBar.className = "bg-yellow-400 h-3 rounded-full transition-all duration-500";
+                    else waterBar.className = "bg-blue-400 h-3 rounded-full transition-all duration-500";
+                }
+
+                const waterBtn = document.getElementById('waterBtn');
+                if (waterBtn) {
+                    document.getElementById('waterCount').innerText = this.waterChangeCount;
+                    waterBtn.disabled = (this.waterChangeCount <= 0);
+                }
+
+                const moltBtn = document.getElementById('moltBtn');
+                if (this.crayfish.growth >= 100 && !this.isMatching) {
+                    moltBtn.disabled = false;
+                    moltBtn.classList.replace('bg-gray-300', 'bg-yellow-400');
+                    moltBtn.classList.replace('text-gray-500', 'text-yellow-900');
+                    moltBtn.classList.replace('border-transparent', 'border-yellow-500');
+                } else {
+                    moltBtn.disabled = true;
+                    moltBtn.classList.replace('bg-yellow-400', 'bg-gray-300');
+                    moltBtn.classList.replace('text-yellow-900', 'text-gray-500');
+                    moltBtn.classList.replace('border-yellow-500', 'border-transparent');
+                }
+
+                const rate = this.calcCurrentSurvivalRate();
+                const rateEl = document.getElementById('survivalRateDisplay');
+                rateEl.innerText = `${rate}%`;
+                if(rate < 50) rateEl.className = "font-bold text-lg text-red-600";
+                else if(rate < 80) rateEl.className = "font-bold text-lg text-yellow-600";
+                else rateEl.className = "font-bold text-lg text-blue-600";
+
+                document.getElementById('scoreDisplay').innerText = this.calcScore();
+            }
+
+            showMessage(text) {
+                const log = document.getElementById('messageLog');
+                if (log) log.innerHTML = `<span class="bg-black/50 text-white px-3 py-1 rounded-full text-sm animate-pulse">${text}</span>`;
+            }
+
+            showModal(title, desc, isGameOver = false) {
+                const modalTitle = document.getElementById('modalTitle');
+                const modalDesc = document.getElementById('modalDesc');
+                const modalOverlay = document.getElementById('modalOverlay');
+                const memorialContainer = document.getElementById('memorialContainer');
+                const memorialImage = document.getElementById('memorialImage');
+                const modalBtn = document.getElementById('modalBtn');
+
+                if (modalTitle && modalDesc && modalOverlay) {
+                    modalTitle.innerText = title;
+                    modalDesc.innerText = desc;
+                    
+                    if (isGameOver) {
+                        memorialImage.src = this.generateMemorialImage();
+                        memorialContainer.classList.remove('hidden');
+                        memorialContainer.classList.add('flex');
+                        modalBtn.innerText = this.hasChild ? "次の世代へ" : "第1世代からやり直す";
+                    } else {
+                        memorialContainer.classList.add('hidden');
+                        memorialContainer.classList.remove('flex');
+                        modalBtn.innerText = "次へ";
+                    }
+                    
+                    modalOverlay.classList.remove('hidden');
+                }
+            }
+
+            generateMemorialImage() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1200;
+                canvas.height = 630;
+                const ctx = canvas.getContext('2d');
+
+                const grad = ctx.createLinearGradient(0, 0, 1200, 630);
+                grad.addColorStop(0, '#1e293b');
+                grad.addColorStop(1, '#0f172a');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, 1200, 630);
+
+                ctx.strokeStyle = '#475569';
+                ctx.lineWidth = 16;
+                ctx.strokeRect(8, 8, 1184, 614);
+
+                ctx.fillStyle = '#f8fafc';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                ctx.font = 'bold 50px sans-serif';
+                ctx.fillText('生きた証 - ザリガニ・ライフ', 600, 80);
+
+                const displayEntity = {
+                    ...this.crayfish,
+                    x: 350,
+                    y: 360,
+                    size: 8, 
+                    angle: -Math.PI / 2, 
+                    state: 'IDLE' 
+                };
+
+                ctx.save();
+                ctx.translate(350, 400);
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 150, 40, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.restore();
+
+                this.drawCrayfishEntity(displayEntity, ctx);
+
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'alphabetic';
+                ctx.fillStyle = '#f8fafc';
+                const info = CRAYFISH_TYPES[this.crayfish.type];
+                
+                ctx.font = 'bold 44px sans-serif';
+                ctx.fillText(`第 ${this.generation} 世代`, 650, 200);
+                
+                ctx.font = 'bold 40px sans-serif';
+                const stars = '★'.repeat(info.rarity) + '☆'.repeat(5 - info.rarity);
+                ctx.fillStyle = '#fbbf24';
+                ctx.fillText(stars, 650, 270);
+                
+                ctx.fillStyle = '#f8fafc';
+                ctx.fillText(`種類: ${info.name} ${info.icon}`, 650, 340);
+                ctx.fillText(`サイズ: ${this.crayfish.size.toFixed(1)} cm`, 650, 410);
+                ctx.fillText(`スコア: ${this.calcScore()} pt`, 650, 480);
+
+                if (info.ability) {
+                    ctx.fillStyle = '#d8b4fe';
+                    ctx.font = 'bold 36px sans-serif';
+                    ctx.fillText(`✨能力: ${info.ability}`, 650, 550);
+                }
+
+                return canvas.toDataURL('image/png');
+            }
+
+            update(dt) {
+                let needsUpdateUI = false;
+                const myInfo = CRAYFISH_TYPES[this.crayfish.type];
+
+                if (myInfo.ability === '環境適応') {
+                    this.waterQuality = 100;
+                    needsUpdateUI = true;
+                }
+
+                if (myInfo.ability === '光合成' && this.waterQuality >= 80 && this.crayfish.growth < 100) {
+                    this.crayfish.growth += (0.2 * (dt/16));
+                    needsUpdateUI = true;
+                }
+
+                for (let i = this.foods.length - 1; i >= 0; i--) {
+                    const f = this.foods[i];
+                    f.y += 2 * (dt / 16); 
+                    
+                    const dist = Math.hypot(f.x - this.crayfish.x, f.y - this.crayfish.y);
+                    if (dist < this.crayfish.size * 5 + 20 && this.crayfish.state !== 'HIDDEN') { 
+                        this.eatFood(f);
+                        this.foods.splice(i, 1);
+                        continue;
+                    }
+                    if (f.y > this.height) {
+                        this.foods.splice(i, 1);
+                        let drop = myInfo.ability === '浄化' ? 5 : 10;
+                        this.waterQuality = Math.max(0, this.waterQuality - drop);
+                        needsUpdateUI = true;
+                    }
+                }
+
+                if (needsUpdateUI) this.updateUI();
+
+                if (this.isUnderAttack) {
+                    this.attackTimer -= dt;
+                    this.enemyX += (dt / 16) * 2.4; 
+                    this.enemyY += Math.sin(this.enemyX * 0.05) * 2; 
+                    
+                    if (this.crayfish.isFleeingToPipe) {
+                        this.crayfish.targetX = this.width - 60; 
+                        this.crayfish.targetY = this.height - 45; 
+                        const distToPipe = Math.hypot((this.width - 60) - this.crayfish.x, (this.height - 45) - this.crayfish.y);
+                        if (distToPipe < 30) this.resolveAttack(true);
+                    }
+                    if (this.attackTimer <= 0) this.resolveAttack(false);
+                }
+
+                const dx = this.crayfish.targetX - this.crayfish.x;
+                const dy = this.crayfish.targetY - this.crayfish.y;
+                const baseSpd = 0.02 * this.crayfish.speedStats;
+                const speedMult = this.isEscaping ? 5 : 1;
+                const finalSpeed = baseSpd * speedMult * (dt / 16); 
+
+                if (Math.hypot(dx, dy) > 1) {
+                    this.crayfish.x += dx * finalSpeed;
+                    this.crayfish.y += dy * finalSpeed;
+                    this.crayfish.angle = Math.atan2(dy, dx);
+                } else if (this.isMatching) {
+                    this.crayfish.angle = 0; 
+                }
+
+                if (Math.random() < 0.02) {
+                    this.bubbles.push({
+                        x: Math.random() * this.width,
+                        y: this.height + 20,
+                        r: Math.random() * 5 + 2.5,
+                        speed: Math.random() * 1 + 0.5,
+                        wobble: Math.random() * Math.PI * 2
+                    });
+                }
+
+                for (let i = this.bubbles.length - 1; i >= 0; i--) {
+                    const b = this.bubbles[i];
+                    b.y -= b.speed * (dt / 16);
+                    b.x += Math.sin(b.wobble) * 0.5;
+                    b.wobble += 0.05;
+
+                    if (b.y + b.r < 0) this.bubbles.splice(i, 1);
+                }
+            }
+
+            draw() {
+                this.ctx.clearRect(0, 0, this.width, this.height);
+
+                if (this.waterQuality < 100) {
+                    const opacity = (100 - this.waterQuality) / 100 * 0.6; 
+                    this.ctx.fillStyle = `rgba(100, 120, 80, ${opacity})`;
+                    this.ctx.fillRect(0, 0, this.width, this.height);
+                }
+
+                if (this.crayfish.type === 'galaxy' && !this.isMatching) {
+                    this.ctx.fillStyle = 'rgba(0, 0, 50, 0.2)';
+                    this.ctx.fillRect(0, 0, this.width, this.height);
+                }
+
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                this.bubbles.forEach(b => {
+                    this.ctx.beginPath();
+                    this.ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+                    this.ctx.fill();
+                });
+
+                this.drawPipe();
+
+                this.foods.forEach(f => {
+                    this.ctx.beginPath();
+                    this.ctx.fillStyle = f.color;
+                    this.ctx.arc(f.x, f.y, 5, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.stroke();
+                });
+
+                if (this.isMatching && this.partner) {
+                    this.drawCrayfishEntity(this.partner);
+                }
+
+                this.drawCrayfishEntity(this.crayfish);
+
+                if (this.hasChild && this.savedPartner) {
+                    const childColor = {
+                        r: (this.crayfish.color.r + this.savedPartner.color.r) / 2,
+                        g: (this.crayfish.color.g + this.savedPartner.color.g) / 2,
+                        b: (this.crayfish.color.b + this.savedPartner.color.b) / 2,
+                    };
+                    this.drawCrayfishEntity({
+                        x: 40, y: 160, size: 1.5,
+                        color: childColor, type: this.crayfish.type, 
+                        angle: Math.PI / 4, state: 'IDLE'
+                    });
+                    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    this.ctx.font = 'bold 12px sans-serif';
+                    this.ctx.fillText("👶 卵 (次世代)", 60, 160);
+                }
+
+                if (this.isUnderAttack) {
+                    this.ctx.save();
+                    this.ctx.translate(this.enemyX, this.enemyY);
+                    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                    this.ctx.beginPath();
+                    // ぽっちゃりした赤ちゃんの手の影
+                    this.ctx.arc(0, 0, 50, 0, Math.PI * 2); 
+                    this.ctx.arc(-40, -20, 18, 0, Math.PI * 2); 
+                    this.ctx.arc(-20, -60, 18, 0, Math.PI * 2); 
+                    this.ctx.arc(10, -65, 18, 0, Math.PI * 2); 
+                    this.ctx.arc(35, -50, 18, 0, Math.PI * 2); 
+                    this.ctx.arc(50, -20, 15, 0, Math.PI * 2); 
+                    this.ctx.fill();
+                    this.ctx.restore();
+                }
+            }
+
+            drawPipe() {
+                const px = this.width - 90;
+                const py = this.height - 70;
+                this.ctx.save();
+                this.ctx.fillStyle = '#a0522d'; 
+                this.ctx.strokeStyle = '#6b3e23';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.rect(px, py, 60, 50);
+                this.ctx.fill();
+                this.ctx.stroke();
+                this.ctx.beginPath();
+                this.ctx.ellipse(px + 30, py, 30, 15, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+                this.ctx.fillStyle = '#222';
+                this.ctx.beginPath();
+                this.ctx.ellipse(px + 30, py, 25, 10, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.restore();
+            }
+
+            drawCrayfishEntity(entity, ctxOverride = null) {
+                const ctx = ctxOverride || this.ctx;
+                const { x, y, size, color, angle, state, type } = entity;
+                if (state === 'DEAD' || state === 'HIDDEN') return;
+
+                let drawColor = color;
+                let isCrystal = false, isMecha = false, isZombie = false, isNinja = false, isRainbow = false;
+
+                if (type === 'ghost') { drawColor = {r: 200, g: 220, b: 255}; }
+                else if (type === 'nature') drawColor = {r: 34, g: 139, b: 34};
+                else if (type === 'ice') drawColor = {r: 240, g: 255, b: 255};
+                else if (type === 'poison') drawColor = {r: 128, g: 0, b: 128};
+                else if (type === 'ocean') drawColor = {r: 0, g: 0, b: 139};
+                else if (type === 'blood') drawColor = {r: 139, g: 0, b: 0};
+                else if (type === 'galaxy') drawColor = {r: 25, g: 25, b: 112};
+                else if (type === 'angel') drawColor = {r: 255, g: 250, b: 250};
+                else if (type === 'devil') drawColor = {r: 100, g: 0, b: 0};
+                else if (type === 'mummy') drawColor = {r: 189, g: 183, b: 107};
+                else if (type === 'neon') drawColor = {r: 255, g: 20, b: 147};
+                else if (type === 'shadow') drawColor = {r: 20, g: 20, b: 20};
+                else if (type === 'sun') drawColor = {r: 255, g: 140, b: 0};
+                else if (type === 'moon') drawColor = {r: 173, g: 216, b: 230};
+                else if (type === 'clown') drawColor = {r: 255, g: 105, b: 180};
+                else if (type === 'cyborg') { drawColor = {r: 169, g: 169, b: 169}; isMecha = true; }
+                else if (type === 'fairy') drawColor = {r: 175, g: 238, b: 238};
+                else if (type === 'dragon') drawColor = {r: 0, g: 100, b: 0};
+                else if (type === 'pixel') drawColor = {r: 128, g: 128, b: 128};
+                else if (type === 'gold') drawColor = {r: 255, g: 215, b: 0}; 
+                else if (type === 'crystal') { drawColor = {r: 224, g: 255, b: 255}; isCrystal = true; }
+                else if (type === 'mecha') { drawColor = {r: 112, g: 128, b: 144}; isMecha = true; }
+                else if (type === 'alien') drawColor = {r: 50, g: 205, b: 50}; 
+                else if (type === 'ninja') { drawColor = {r: 40, g: 45, b: 50}; isNinja = true; }
+                else if (type === 'magma') drawColor = {r: 220, g: 40, b: 20};
+                else if (type === 'sakura') drawColor = {r: 255, g: 183, b: 197};
+                else if (type === 'zombie') { drawColor = {r: 80, g: 100, b: 40}; isZombie = true; }
+                else if (type === 'rainbow') isRainbow = true;
+                else if (type === 'king') drawColor = {r: 220, g: 40, b: 40};
+
+                let pastelC = `rgb(${Math.min(255, drawColor.r + 40)},${Math.min(255, drawColor.g + 40)},${Math.min(255, drawColor.b + 40)})`;
+                let darkC = `rgb(${Math.max(0, drawColor.r - 60)},${Math.max(0, drawColor.g - 60)},${Math.max(0, drawColor.b - 60)})`;
+
+                if (isRainbow) {
+                    const hue = (Date.now() / 20) % 360;
+                    pastelC = `hsl(${hue}, 80%, 70%)`;
+                    darkC = `hsl(${hue}, 80%, 40%)`;
+                }
+
+                const scale = size * 1.3;
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(angle + Math.PI / 2);
+
+                if (isCrystal || type === 'ghost') ctx.globalAlpha = type === 'ghost' ? 0.4 : 0.6;
+                
+                ctx.fillStyle = pastelC; 
+                ctx.strokeStyle = darkC; 
+                ctx.lineWidth = scale * 0.15;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+
+                if (type === 'angel' || type === 'fairy') {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                    ctx.beginPath(); ctx.ellipse(-scale*3, -scale*2, scale*3, scale*1.5, Math.PI/4, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.ellipse(scale*3, -scale*2, scale*3, scale*1.5, -Math.PI/4, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = pastelC; 
+                }
+                if (type === 'devil' || type === 'dragon') {
+                    ctx.fillStyle = type === 'dragon' ? 'rgba(0, 50, 0, 0.8)' : 'rgba(50, 0, 0, 0.8)';
+                    ctx.beginPath(); ctx.moveTo(-scale*2, -scale*2); ctx.lineTo(-scale*6, -scale*4); ctx.lineTo(-scale*4, 0); ctx.fill();
+                    ctx.beginPath(); ctx.moveTo(scale*2, -scale*2); ctx.lineTo(scale*6, -scale*4); ctx.lineTo(scale*4, 0); ctx.fill();
+                    ctx.fillStyle = pastelC; 
+                }
+
+                ctx.beginPath();
+                ctx.moveTo(0, scale * 4);
+                ctx.quadraticCurveTo(-scale * 3.5, scale * 7, 0, scale * 8.5);
+                ctx.quadraticCurveTo(scale * 3.5, scale * 7, 0, scale * 4);
+                ctx.fill(); ctx.stroke();
+
+                for(let i=2; i>=0; i--) {
+                    ctx.beginPath();
+                    ctx.ellipse(0, scale * (2 + i*1.2), scale * (2 - i * 0.2), scale * (1.8 - i * 0.1), 0, 0, Math.PI * 2);
+                    ctx.fill(); ctx.stroke();
+                }
+
+                for(let i=0; i<3; i++) {
+                    const legY = scale * (2 + i * 1.2), legX = scale * (2.5 - i * 0.2);
+                    ctx.beginPath(); ctx.ellipse(-legX, legY, scale * 0.6, scale*0.4, Math.PI/4, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                    ctx.beginPath(); ctx.ellipse(legX, legY, scale * 0.6, scale*0.4, -Math.PI/4, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                }
+
+                ctx.beginPath(); ctx.arc(0, 0, scale * 3.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+                const drawCuteClaw = (cx, cy, mirror) => {
+                    ctx.save();
+                    ctx.translate(cx, cy);
+                    if(mirror) ctx.scale(-1, 1);
+                    ctx.rotate(-Math.PI / 6);
+                    ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(scale*1, scale*1, 0, scale * 2.5);
+                    ctx.lineWidth = scale * 0.6; ctx.stroke();
+                    ctx.translate(0, scale * 2.5); ctx.lineWidth = scale * 0.15;
+                    ctx.beginPath(); ctx.ellipse(-scale*0.8, -scale*1.5, scale*2.2, scale*2.8, Math.PI/5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                    ctx.beginPath(); ctx.ellipse(scale*1.5, -scale*0.5, scale*1.2, scale*1.6, -Math.PI/3, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                    ctx.restore();
+                };
+                drawCuteClaw(-scale * 3.2, -scale * 1.0, false); 
+                drawCuteClaw(scale * 3.2, -scale * 1.0, true);
+
+                const drawCuteEye = (ex, ey) => {
+                    ctx.save(); ctx.translate(ex, ey);
+                    if (isMecha) {
+                        ctx.fillStyle = type === 'cyborg' ? '#00ffff' : '#ff3333';
+                        ctx.strokeStyle = darkC; ctx.lineWidth = scale * 0.1;
+                        ctx.fillRect(-scale, -scale*0.8, scale * 2, scale * 1.5); ctx.strokeRect(-scale, -scale*0.8, scale * 2, scale * 1.5);
+                        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, -scale*0.5, scale * 0.5, scale * 0.5);
+                    } else if (isZombie || type === 'mummy') {
+                        ctx.strokeStyle = darkC; ctx.lineWidth = scale * 0.3;
+                        ctx.beginPath(); ctx.moveTo(-scale*0.8, -scale*0.8); ctx.lineTo(scale*0.8, scale*0.8);
+                        ctx.moveTo(scale*0.8, -scale*0.8); ctx.lineTo(-scale*0.8, scale*0.8); ctx.stroke();
+                    } else if (isNinja || type === 'shadow') {
+                        ctx.fillStyle = 'white'; ctx.strokeStyle = darkC; ctx.lineWidth = scale * 0.1;
+                        ctx.beginPath(); ctx.ellipse(0, 0, scale * 1.3, scale * 0.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                        ctx.fillStyle = type === 'shadow' ? 'red' : '#111'; ctx.beginPath(); ctx.arc(0, 0, scale * 0.4, 0, Math.PI * 2); ctx.fill();
+                    } else {
+                        ctx.fillStyle = 'white'; ctx.strokeStyle = darkC; ctx.lineWidth = scale * 0.1;
+                        ctx.beginPath(); ctx.ellipse(0, 0, scale * 1.3, scale * 1.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                        ctx.fillStyle = type === 'alien' ? 'red' : (type === 'blood' ? 'yellow' : '#333'); 
+                        ctx.beginPath(); ctx.arc(scale * 0.15, 0, scale * 0.8, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = 'white'; ctx.beginPath(); ctx.ellipse(-scale * 0.25, -scale * 0.3, scale * 0.3, scale * 0.2, Math.PI/4, 0, Math.PI * 2); ctx.fill();
+                        ctx.beginPath(); ctx.arc(scale * 0.4, scale * 0.3, scale * 0.15, 0, Math.PI * 2); ctx.fill();
+                    }
+                    ctx.restore();
+                };
+                drawCuteEye(-scale * 1.3, -scale * 1.2); drawCuteEye(scale * 1.3, -scale * 1.2); 
+
+                ctx.beginPath(); ctx.strokeStyle = darkC; ctx.lineWidth = scale * 0.2; ctx.lineCap = 'round';
+                if (isMecha) {
+                    ctx.moveTo(-scale * 0.8, -scale * 3.0); ctx.lineTo(-scale * 4, -scale * 7); ctx.lineTo(-scale * 3, -scale * 9); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(scale * 0.8, -scale * 3.0); ctx.lineTo(scale * 4, -scale * 7); ctx.lineTo(scale * 3, -scale * 9); ctx.stroke();
+                } else {
+                    ctx.moveTo(-scale * 0.8, -scale * 3.0); ctx.bezierCurveTo(-scale * 3, -scale * 7, -scale * 7, -scale * 5, -scale * 6, -scale * 9); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(scale * 0.8, -scale * 3.0); ctx.bezierCurveTo(scale * 3, -scale * 7, scale * 7, -scale * 5, scale * 6, -scale * 9); ctx.stroke();
+                }
+
+                ctx.beginPath(); ctx.strokeStyle = darkC; ctx.lineWidth = scale * 0.15;
+                if (isMecha) { ctx.moveTo(-scale, scale); ctx.lineTo(scale, scale); }
+                else { ctx.arc(0, scale * 0.8, scale * 0.6, 0.15 * Math.PI, 0.85 * Math.PI); }
+                ctx.stroke();
+
+                ctx.globalAlpha = 1.0; 
+                if (type === 'king') {
+                    ctx.fillStyle = '#ffd700'; ctx.strokeStyle = '#b8860b'; ctx.lineWidth = scale * 0.2;
+                    ctx.beginPath(); ctx.moveTo(-scale * 2.5, -scale * 2); ctx.lineTo(-scale * 3.5, -scale * 6); ctx.lineTo(-scale * 1, -scale * 4);
+                    ctx.lineTo(0, -scale * 7); ctx.lineTo(scale * 1, -scale * 4); ctx.lineTo(scale * 3.5, -scale * 6); ctx.lineTo(scale * 2.5, -scale * 2);
+                    ctx.closePath(); ctx.fill(); ctx.stroke();
+                }
+                if (type === 'magma' && Math.random() < 0.2) { ctx.fillStyle = 'orange'; ctx.font = `${scale*2}px Arial`; ctx.fillText("🔥", scale * (Math.random()*4-2), -scale * (Math.random()*6-2)); }
+                if (type === 'sakura' && Math.random() < 0.1) { ctx.fillStyle = 'pink'; ctx.font = `${scale*2}px Arial`; ctx.fillText("🌸", scale * (Math.random()*6-3), -scale * (Math.random()*6-3)); }
+                if (type === 'sun') {
+                    ctx.strokeStyle = 'rgba(255, 200, 0, 0.5)'; ctx.lineWidth = scale * 0.5;
+                    ctx.beginPath(); ctx.arc(0, -scale*2, scale*5, 0, Math.PI*2); ctx.stroke();
+                }
+                if (type === 'moon') {
+                    ctx.fillStyle = 'rgba(255, 255, 200, 0.3)';
+                    ctx.beginPath(); ctx.arc(0, -scale*2, scale*6, 0, Math.PI*2); ctx.fill();
+                }
+                if (type === 'poison' && Math.random() < 0.2) {
+                    ctx.fillStyle = 'purple';
+                    ctx.beginPath(); ctx.arc(scale * (Math.random()*4-2), -scale * (Math.random()*6-2), scale*0.5, 0, Math.PI*2); ctx.fill();
+                }
+                if (type === 'galaxy') {
+                    ctx.fillStyle = 'white';
+                    for(let i=0; i<3; i++) ctx.fillRect(scale * (Math.random()*6-3), -scale * (Math.random()*8), scale*0.2, scale*0.2);
+                }
+
+                if (entity === this.crayfish && this.isEscaping && !ctxOverride) {
+                    ctx.fillStyle = 'rgba(150, 200, 255, 0.9)'; ctx.font = `bold ${scale*3}px Arial`;
+                    ctx.fillText("💦", scale * 4.5, -scale*2); ctx.fillText("💦", -scale * 7, -scale*1);
+                }
+                ctx.restore();
+            }
+
+            loop(timestamp) {
+                if (!this.lastTime) this.lastTime = timestamp;
+                const dt = timestamp - this.lastTime;
+                this.lastTime = timestamp;
+                
+                if (dt < 100) {
+                    this.update(dt);
+                }
+                this.draw();
+                requestAnimationFrame((t) => this.loop(t));
+            }
+        }
+
+        window.onload = () => { window.game = new CrayfishGame(); };
+    </script>
+</body>
+</html>
